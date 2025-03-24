@@ -28,15 +28,12 @@ class LLMAPI:
         :param llm_option: 模型選項名稱 (key)
         :return: Ollama LLM 實例
         """
-        api_base = "http://10.5.61.81:11436"  # 內部 Ollama API 位址
+        api_base = "http://10.5.61.81:11437"  # 內部 Ollama API 位址
 
         # 定義內部支援的模型清單 (字典)
         llm_model_names = {
-            "Taiwan-llama3-f16": "cwchang/llama-3-taiwan-8b-instruct-dpo:f16",
-            "Taiwan-llama3-8b": "SimonPu/llama-3-taiwan-8b-instruct-dpo",
-            "Gemma2": "gemma2:latest",
+            "Taiwan-Llama3-16f": "cwchang/llama-3-taiwan-8b-instruct:f16",
             "Gemma2:27b": "gemma2:27b-instruct-q5_0",
-            "Taide-llama3-8b-f16": "jcai/llama3-taide-lx-8b-chat-alpha1:f16"
         }
 
         # 根據傳入 llm_option 找對應模型

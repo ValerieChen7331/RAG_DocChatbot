@@ -44,8 +44,8 @@ class UIController:
         """重置 session state 參數至預設值。"""
         reset_session_state = {
             'mode': '內部LLM',
-            'llm_option': 'Gemma2',
-            'model': None,
+            'llm_option': 'Gemma2:27b',
+            'model': "gemma2:27b-instruct-q5_0",
             'api_base': None,
             'api_key': None,
             'embedding': 'bge-m3',

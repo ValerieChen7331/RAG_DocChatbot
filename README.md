@@ -4,6 +4,7 @@
 本專案是一個 Retrieval-Augmented Generation (RAG) 文件檢索聊天機器人，能根據上傳的 KEYPO 功能手冊文件進行檢索並提供準確回答。
 當知識庫中找不到答案時，會明確回覆「不知道」，避免產生幻覺回覆。
 
+影片連結: https://drive.google.com/file/d/1zonmd5DjB4uLdw6tDbIPVid_UjjnNGO2/view?usp=drive_link
 ---
 
 ## ✅ 主要功能
