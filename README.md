@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 📚 文件檢索聊天機器人（RAG 知識庫整合）
 
 ## 🎯 專案目標
@@ -84,3 +85,7 @@ streamlit run rag_app.py
 > 專案用途：KEYPO 功能手冊文件檢索智能問答機器人開發。
 > 技術：Python / Streamlit / LangChain / ChromaDB / Azure OpenAI / Ollama
 
+=======
+# RAG_DocChatbot
+Document Search Chatbot (with RAG integration)
+>>>>>>> aea9c6468af7c6537a33433c6633ed2a15587974
