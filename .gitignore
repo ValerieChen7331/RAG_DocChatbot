@@ -1,0 +1,5 @@
+__pycache__/
+data/vector_store/index/*.pkl
+data/vector_store/index/*.bin
+data/vector_store/*.parquet
+data/vector_store/retriever.json
