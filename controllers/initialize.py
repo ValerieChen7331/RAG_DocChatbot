@@ -8,17 +8,13 @@ class SessionInitializer:
     def __init__(self, username, base_dir=None):
         """
         初始化 SessionInitializer，設置使用者名稱和文件路徑。
-
-        參數:
-            username (str): 使用者名稱。
-            base_dir (str, optional): 基本目錄路徑，默認為 None。
         """
         self.username = username
         self.file_paths = FilePaths(base_dir)
 
     def initialize_session_state(self):
         """初始化 Session 狀態，並儲存到字典 chat_session_data 中。"""
-        # 從 user_records_db 載入資料，只取 active_window_index 欄位
+        # 從 user_records_db 載入資料
         userRecords_db = UserRecordsDB(self.username)
         database = userRecords_db.load_database(
             'chat_history',

@@ -1,12 +1,7 @@
-# import logging
+# llm_model.py
 from apis.llm_api import LLMAPI
-# from apis.embedding_api import EmbeddingAPI
-# from apis.file_paths import FilePaths
-# from langchain.prompts import PromptTemplate
-# from langchain.prompts import ChatPromptTemplate
 from langchain.chains import ConversationChain
 from langchain.memory import ConversationBufferMemory
-# from langchain.memory import ChatMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.prompts import PromptTemplate
@@ -15,18 +10,18 @@ from typing import List, Dict
 
 class LLMModel:
     def __init__(self, chat_session_data):
+        """
+        初始化 LLMModel 物件並儲存使用者 session 設定。
+        """
         # 提取 chat_session_data
         self.chat_session_data = chat_session_data
         self.mode = chat_session_data.get('mode')
         self.llm_option = chat_session_data.get('llm_option')
 
-        # username = chat_session_data.get('username')
-        # conversation_id = chat_session_data.get('conversation_id')
-        # 獲取檔案路徑
-        # file_paths = FilePaths(username, conversation_id)
-        # self.output_dir = file_paths.get_output_dir()
-        # self.vector_store_dir = file_paths.get_local_vector_store_dir()
-    def query_llm_direct(self, query):
+    def query_llm_direct(self, query:str) -> str:
+        """
+        使用 LLM 直接回答使用者輸入問題（有對話歷史記憶）。
+        """
         # 獲取 active_window_index
         active_window_index = self.chat_session_data.get('active_window_index', 0)
 
@@ -47,16 +42,13 @@ class LLMModel:
             # 將 ChatMessageHistory 設置為 ConversationBufferMemory 的歷史記錄
             self.chat_session_data[memory_key].chat_memory = chat_history
 
-        # 定義 LLM
         llm = LLMAPI.get_llm(self.mode, self.llm_option)
-
-        # 自訂提示模板，包含上下文和指令
+        # 提示模板
         init_prompt = f"""
-        You are a helpful and knowledgeable assistant. You will provide responses in Traditional Chinese (台灣中文).
-        Here is the conversation history:
+        你是一位親切、專業且反應快速的問答助理，請使用繁體中文（台灣用語）回覆。 
+        以下是對話紀錄：  
         {{history}}
-
-        Now, please provide a concise and relevant response to the following query:
+        請根據上述內容，針對以下問題，提供簡單明瞭、正確實用的回答，必要時可適當補充說明，但避免過長或贅述：  
         {{input}}
         """
 
@@ -71,34 +63,37 @@ class LLMModel:
         response = result.get('response', '')
         return response
 
-    def set_window_title(self, query):
-        """使用 LLM 根據用戶的查詢設置窗口標題。"""
+    def set_window_title(self, query:str) -> str:
+        """
+        使用 LLM 根據使用者問題，自動產生簡短視窗標題文字。
+        """
         try:
-            llm = LLMAPI.get_llm(self.mode, self.llm_option)          # 獲取 LLM API 物件
-            prompt_template = self._title_prompt()   # 獲取prompt模板
+            llm = LLMAPI.get_llm(self.mode, self.llm_option)    # 獲取 LLM API 物件
+            prompt_template = self._title_prompt()  # 獲取prompt模板
             formatted_prompt = prompt_template.format(query=query)  # 格式化prompt模板，插入query
 
-            title = llm.invoke(formatted_prompt)    # 調用 LLM 生成 window title
-            if self.chat_session_data.get('mode') == '內部LLM':
-                pass
-            else:
+            # 調用 LLM 生成 window title
+            title = llm.invoke(formatted_prompt)
+            if self.chat_session_data.get('mode') != '內部LLM':
                 title = title.content
-            self.chat_session_data['title'] = title
 
-            # 過濾 title， 只保留中英文、數字及空格
+            # 過濾非中文字、英文、數字與空白
             title = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9 ]", "", title)
             # 限制長度
             if len(title) > 12:
                 title = title[:12]
+
+            self.chat_session_data['title'] = title
             return title
 
-
-
         except Exception as e:
-            return print(f"查詢 set_window_title 時發生錯誤: {e}")
+            print(f"生成視窗標題文字時發生錯誤: {e}")
+            return "未產生標題"
 
     def _title_prompt(self):
-        """生成設置窗口標題所需的提示模板。"""
+        """
+        回傳自動產生標題的 Prompt 模板。
+        """
         template = """
         根據以下提問(Q:)，列出1個關鍵字。請務必遵守以下規則：
         1.只能輸出關鍵字，不要有其他說明。
@@ -110,54 +105,38 @@ class LLMModel:
 
     def doc_summary(self, documents: List) -> List[str]:
         """
-        使用 LLM 針對每個文件 (Document) 進行摘要，
-        並回傳每個檔案產出的摘要清單（只回傳摘要字串，不包含來源檔名）。
-
-        輸入：
-            documents: List[Document]
-                多個 Document 物件，每個包含 page_content（文件內容）與 metadata。
-
-        輸出：
-            List[str]
-                每個元素是一段摘要文字字串，
-                按文件順序排列。
+        使用 LLM 對文件內容進行摘要，回傳多個摘要文字清單。
         """
         try:
             # 取得 LLM API 物件（根據模式與選項）
             llm = LLMAPI.get_llm(self.mode, self.llm_option)
-
             # 取得摘要所需 prompt 模板
             prompt_template = self._doc_summary_prompt()
 
-            summaries = []  # 儲存摘要文字
-
+            summaries = []
             # 對每個 Document 個別產生摘要
             for doc in documents:
                 # 將每份文件內容填入 prompt
                 formatted_prompt = prompt_template.format(documents=doc.page_content)
-
                 # 呼叫 LLM 取得摘要
                 doc_summary = llm.invoke(formatted_prompt)
-
                 # 如果是外部 LLM，取 .content
                 if self.chat_session_data.get('mode') != '內部LLM':
                     doc_summary = doc_summary.content
-
-                # 只存摘要文字
+                # 儲存摘要文字
                 summaries.append(doc_summary.strip())
-
             return summaries
-
         except Exception as e:
             print(f"doc_summary 時發生錯誤: {e}")
             return []
 
     def _doc_summary_prompt(self):
-        """生成摘要提示模板"""
+        """
+        生成摘要提示模板
+        """
         template = """
         請根據以下文章進行摘要，文長約300字。
         ---
         文章: {documents}        
         """
         return PromptTemplate(input_variables=["documents"], template=template)
-

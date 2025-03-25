@@ -14,7 +14,6 @@ class UserRecordsDB:
         self.db_path = self.file_paths.get_user_records_dir(username).joinpath(f"{username}.db")
         # 創建 BaseDB 實例來處理資料庫操作
         self.base_db = BaseDB(self.db_path)
-
         # 初始化資料庫表格
         self.base_db.ensure_db_path_exists()
         self._init_db()
@@ -72,13 +71,6 @@ class UserRecordsDB:
     def load_database(self, database, columns=None) -> pd.DataFrame:
         """
         載入聊天記錄，並以 DataFrame 格式返回。
-
-        Args:
-            database (str): 資料庫名稱。
-            columns (list, optional): 欲選取的欄位名稱列表。如果未提供，則選取預設的所有欄位。
-
-        Returns:
-            pd.DataFrame: 聊天記錄的 DataFrame。
         """
         # 預設所有欄位
         all_columns = [
@@ -108,12 +100,6 @@ class UserRecordsDB:
             print(f"load_database 發生錯誤: {e}")
             return empty_df
 
-    def delete_chat_by_index(self, delete_index):
-        """刪除指定的聊天記錄。"""
-        self.base_db.execute_query(
-            "DELETE FROM chat_history WHERE active_window_index = ?",
-            (delete_index,))
-
     def update_chat_indexes(self, delete_index):
         """更新聊天記錄索引。"""
         chat_histories = self.base_db.fetch_query(
@@ -126,14 +112,17 @@ class UserRecordsDB:
                     "UPDATE chat_history SET active_window_index = ? WHERE id = ?",
                     (new_index, id))
 
-# -----------------------------------------
+    # ===== Delete =====
+    def delete_chat_by_index(self, delete_index):
+        """刪除指定的聊天記錄。"""
+        self.base_db.execute_query(
+            "DELETE FROM chat_history WHERE active_window_index = ?",
+            (delete_index,))
+
+    # ===== Select=====
     def get_active_window_setup(self, index, chat_session_data):
         """
         從資料庫中獲取並加載當前的聊天記錄。
-
-        Args:
-            index (int): 聊天記錄的 active_window_index。
-            chat_session_data (dict): 聊天會話的數據，包括歷史記錄和其他相關資訊。
         """
         try:
             # 定義設置和歷史記錄的欄位名稱
@@ -227,14 +216,10 @@ class UserRecordsDB:
             print(f"取得 get_active_window_doc_summary 時發生錯誤: {e}")
             return ""
 
+    # ===== Insert =====
     def save_to_database(self, query: str, response: str, chat_session_data):
         """
         將查詢結果保存到資料庫中。
-
-        Args:
-            query (str): 使用者的查詢。
-            response (str): AI 回應的結果。
-            chat_session_data (dict): 聊天會話的數據，包括歷史記錄和其他相關資訊。
         """
         # 初始化資料字典，從 chat_session_data 中獲取數據
         data = {key: chat_session_data.get(key, default) for key, default in {
@@ -296,18 +281,6 @@ class UserRecordsDB:
         """
         將當前聊天會話中處理的檔案名稱及對應摘要結果
         儲存到資料庫中的 file_names 表格中。
-
-        輸入：
-            chat_session_data: dict
-                需要包含：
-                - conversation_id: 對話 ID
-                - doc_names: dict，格式 {tmp_name: org_name}
-            doc_summary: list
-                一個摘要清單，每個元素是一段摘要文字，
-                與 doc_names 的順序相對應。
-
-        輸出：
-            無直接回傳（結果寫入資料庫）
         """
 
         conversation_id = chat_session_data.get('conversation_id', None)

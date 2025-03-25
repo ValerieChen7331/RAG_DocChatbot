@@ -25,7 +25,7 @@ class MainContent:
         # 撈取已上傳文件記錄 'doc_names'
         file_names = UserRecordsDB(st.session_state.get("username")).get_active_window_file_names(self.chat_session_data)
         if file_names and self.chat_session_data.get('agent') == '個人KM':
-            st.write(f'**Fils: {file_names}**')  # 顯示文件記錄
+            st.write(f'**📚 {file_names}**')  # 顯示文件記錄
 
     def display_input_fields(self):
         """顯示文件上傳欄位，僅當選擇 '個人KM' 時顯示"""

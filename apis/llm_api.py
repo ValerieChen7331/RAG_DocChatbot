@@ -10,10 +10,6 @@ class LLMAPI:
         """
         根據傳入的模式 (mode) 及模型選項 (llm_option)，
         決定要呼叫內部 LLM 還是外部 Azure LLM。
-
-        :param mode: 字串，'內部LLM' 或其他 (預設為外部 LLM)
-        :param llm_option: 模型名稱選項
-        :return: LLM 實例
         """
         if mode == '內部LLM':
             return LLMAPI._get_internal_llm(llm_option)
@@ -24,9 +20,6 @@ class LLMAPI:
     def _get_internal_llm(llm_option):
         """
         建立並回傳內部 LLM (透過 Ollama 伺服器)
-
-        :param llm_option: 模型選項名稱 (key)
-        :return: Ollama LLM 實例
         """
         api_base = "http://10.5.61.81:11437"  # 內部 Ollama API 位址
 
@@ -49,9 +42,6 @@ class LLMAPI:
     def _get_external_llm(llm_option):
         """
         建立並回傳 Azure OpenAI 的 LLM 實例 (外部)
-
-        :param llm_option: Azure 上已部署的模型名稱 (deployment name)
-        :return: AzureChatOpenAI LLM 實例
         """
         deployment_name = llm_option
         load_dotenv()  # 載入 .env 檔案環境變數

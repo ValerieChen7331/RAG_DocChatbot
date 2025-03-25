@@ -8,9 +8,10 @@ class LLMService:
         """初始化 LLMModel 和 DatabaseModel"""
         self.chat_session_data = chat_session_data
 
-
     def query(self, query):
-        """根據查詢和選擇的助理類型執行適當的 LLM 查詢"""
+        """
+        根據查詢和選擇的助理類型執行適當的 LLM 查詢
+        """
         # 從 session_state 取得相關設定
         selected_agent = self.chat_session_data.get('agent')
         username = self.chat_session_data.get('username')
