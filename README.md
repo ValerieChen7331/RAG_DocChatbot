@@ -59,6 +59,12 @@ streamlit run rag_app.py
 
 ---
 
+## 📈 流程圖  
+![workflow](workflow.png)  
+[workflow](https://www.canva.com/design/DAGip48-pIo/bx9DFPr341IQno54AC2TyQ/view?utm_content=DAGip48-pIo&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=hb127ce56f4)
+
+---
+
 ## 📂 專案結構
 
 * 避免耦合: 📄 rag_app.py ➡ 📁 views ➡ 📁 controllers ➡ 📁 services ➡ 📁 models ➡ 📁 apis
