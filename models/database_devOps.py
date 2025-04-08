@@ -1,110 +1,126 @@
+import logging
+import json
 from datetime import datetime
 from models.database_base import BaseDB
 from apis.file_paths import FilePaths
-import logging
 
+# 設定 logging 等級為 INFO
 logging.basicConfig(level=logging.INFO)
 
-class DevOpsDB:
+class DeveloperDB:
     def __init__(self):
-        """初始化 DevOpsDB 類別。"""
-        # 設定資料庫路徑
+        """初始化 DeveloperDB 類別：建立資料庫連線與初始化資料表"""
         file_paths = FilePaths()
-        self.db_path = file_paths.get_developer_dir().joinpath('DevOpsDB.db')
+        self.db_path = file_paths.get_developer_dir().joinpath('DeveloperDB.db')
         self.base_db = BaseDB(self.db_path)
-
-        # 初始化資料庫表格
         self.base_db.ensure_db_path_exists()
-        self._init_db()
+        self._init_tables()  # 初始化所有資料表
 
-    def _init_db(self):
-        """初始化資料庫，創建必要的表格。"""
-        if not self.db_path.exists():
-            # 定義聊天記錄表格的 SQL 語句
-            chat_history_query = '''
+    def _init_tables(self):
+        """初始化資料表，若不存在則建立"""
+        table_creation_queries = {
+            "chat_history": '''
                 CREATE TABLE IF NOT EXISTS chat_history (
                     id INTEGER PRIMARY KEY,
                     upload_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    username TEXT,
-                    agent TEXT,
-                    mode TEXT,
-                    llm_option TEXT,
-                    model TEXT,
-                    db_source TEXT,
-                    db_name TEXT,
-                    conversation_id TEXT,
-                    active_window_index INTEGER,
-                    num_chat_windows INTEGER,
-                    title TEXT,
-                    user_query TEXT,
-                    ai_response TEXT
-                )
-            '''
-            # 執行創建聊天記錄表格的 SQL 語句
-            self.base_db.execute_query(chat_history_query)
-
-            # 定義 PDF 上傳記錄表格的 SQL 語句
-            pdf_uploads_query = '''
+                    username TEXT, agent TEXT, mode TEXT, llm_option TEXT, model TEXT,
+                    db_source TEXT, db_name TEXT, conversation_id TEXT,
+                    active_window_index INTEGER, num_chat_windows INTEGER,
+                    title TEXT, user_query TEXT, ai_response TEXT
+                )''',
+            "pdf_uploads": '''
                 CREATE TABLE IF NOT EXISTS pdf_uploads (
                     id INTEGER PRIMARY KEY,
                     upload_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    username TEXT,
-                    conversation_id TEXT,
-                    agent TEXT,
-                    embedding TEXT
-                )
-            '''
-            # 執行創建 PDF 上傳記錄表格的 SQL 語句
-            self.base_db.execute_query(pdf_uploads_query)
-
-            # 定義文件名稱記錄表格的 SQL 語句
-            file_names_query = '''
+                    username TEXT, conversation_id TEXT,
+                    agent TEXT, embedding TEXT
+                )''',
+            "file_names": '''
                 CREATE TABLE IF NOT EXISTS file_names (
                     id INTEGER PRIMARY KEY,
                     upload_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    username TEXT, conversation_id TEXT,
+                    tmp_name TEXT, org_name TEXT, doc_summary TEXT
+                )''',
+            "rag_history": '''
+                CREATE TABLE IF NOT EXISTS rag_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT,
                     conversation_id TEXT,
-                    tmp_name TEXT,
-                    org_name TEXT,
-                    doc_summary TEXT
-                )
-            '''
-            # 執行創建文件名稱記錄表格的 SQL 語句
-            self.base_db.execute_query(file_names_query)
-            logging.info("DevOpsDB 資料庫初始化成功。")
+                    query TEXT,
+                    rewritten_query TEXT,
+                    response TEXT,
+                    timestamp TEXT
+                )''',
+            "retrieved_docs": '''
+                CREATE TABLE IF NOT EXISTS retrieved_docs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    rag_history_id INTEGER,
+                    doc_index INTEGER,
+                    content TEXT,
+                    metadata TEXT,
+                    FOREIGN KEY (rag_history_id) REFERENCES rag_history(id)
+                )''',
+            "error_logs": '''
+                CREATE TABLE IF NOT EXISTS error_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT,
+                    context TEXT,
+                    error_message TEXT
+                )'''
+        }
 
-    def save_to_database(self, query: str, response: str, chat_session_data):
+        created_tables = []
+        for name, sql in table_creation_queries.items():
+            try:
+                self.base_db.execute_query(sql)
+                result = self.base_db.fetch_query(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,))
+                if result:
+                    created_tables.append(name)
+            except Exception as e:
+                self._log_error(f"init_table:{name}", str(e))
+
+        if created_tables:
+            logging.info(f"✅ DeveloperDB 初始化完成，建立表格：{', '.join(created_tables)}")
+
+    def _get_timestamp(self) -> str:
+        """取得當前時間字串（統一格式）"""
+        return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    def _log_error(self, context: str, message: str):
+        """將錯誤記錄寫入 error_logs 資料表"""
+        try:
+            self.base_db.execute_query(
+                """
+                INSERT INTO error_logs (timestamp, context, error_message)
+                VALUES (?, ?, ?)
+                """,
+                (self._get_timestamp(), context, message)
+            )
+            logging.error(f"❌ [{context}] 錯誤已寫入 error_logs：{message}")
+        except Exception as log_err:
+            logging.critical(f"❌❌ 無法寫入 error_logs，原始錯誤：{message}，記錄錯誤：{log_err}")
+
+    def save_chat_history(self, query: str, response: str, chat_session_data: dict):
         """
-        將查詢結果保存到資料庫中。
-
-        Args:
-            query (str): 使用者的查詢。
-            response (str): AI 回應的結果。
-            chat_session_data (dict): 聊天會話的數據，包括歷史記錄和其他相關資訊。
+        將聊天記錄保存到 chat_history 表格。
         """
-        # 取得當前時間
-        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        upload_time = self._get_timestamp()
 
-        # 初始化資料字典，從 chat_session_data 中獲取數據
-        data = {key: chat_session_data.get(key, default) for key, default in {
-            'upload_time': current_time,
-            'username': '',
-            'agent': '',
-            'mode': '',
-            'llm_option': '',
-            'model': '',
-            'db_source': '',
-            'db_name': '',
-            'conversation_id': '',
-            'active_window_index': 0,
-            'num_chat_windows': 0,
-            'title': '',
-            'user_query': query,
-            'ai_response': response
-        }.items()}
+        username = chat_session_data.get('username', '')
+        agent = chat_session_data.get('agent', '')
+        mode = chat_session_data.get('mode', '')
+        llm_option = chat_session_data.get('llm_option', '')
+        model = chat_session_data.get('model', '')
+        db_source = chat_session_data.get('db_source', '')
+        db_name = chat_session_data.get('db_name', '')
+        conversation_id = chat_session_data.get('conversation_id', '')
+        active_window_index = chat_session_data.get('active_window_index', 0)
+        num_chat_windows = chat_session_data.get('num_chat_windows', 0)
+        title = chat_session_data.get('title', '')
 
         try:
-            # 插入資料到 chat_history 表格
             self.base_db.execute_query(
                 """
                 INSERT INTO chat_history 
@@ -113,64 +129,91 @@ class DevOpsDB:
                  user_query, ai_response) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                tuple(data.values())
+                (
+                    upload_time, username, agent, mode, llm_option, model, db_source, db_name,
+                    conversation_id, active_window_index, num_chat_windows, title,
+                    query, response
+                )
             )
-            logging.info("查詢結果已成功保存到資料庫 DevOpsDB (chat_history)")
+            logging.info("✅ chat_history 已成功寫入 DeveloperDB。")
         except Exception as e:
-            logging.error(f"保存到 DevOpsDB (chat_history) 資料庫時發生錯誤: {e}")
+            logging.error(f"❌ 儲存 chat_history 時發生錯誤: {e}")
 
-    def save_to_pdf_uploads(self, chat_session_data):
-        """將 PDF 上傳記錄保存到資料庫中。"""
-        # 取得當前時間
-        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-        # 初始化資料字典，從 chat_session_data 中獲取數據
-        data = {key: chat_session_data.get(key, default) for key, default in {
-            'upload_time': current_time,
-            'username': '',
-            'conversation_id': '',
-            'agent': '',
-            'embedding': ''
-        }.items()}
+    def save_to_pdf_uploads(self, chat_session_data: dict):
+        """將 PDF 上傳紀錄寫入 pdf_uploads 表格"""
+        upload_time = self._get_timestamp()
+        username = chat_session_data.get("username", "")
+        conversation_id = chat_session_data.get("conversation_id", "")
+        agent = chat_session_data.get("agent", "")
+        embedding = chat_session_data.get("embedding", "")
 
         try:
-            # 插入資料到 pdf_uploads 表格
             self.base_db.execute_query(
                 """
                 INSERT INTO pdf_uploads 
                 (upload_time, username, conversation_id, agent, embedding) 
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                tuple(data.values())
+                (upload_time, username, conversation_id, agent, embedding)
             )
-            logging.info("查詢結果已成功保存到資料庫 DevOpsDB (pdf_uploads)。")
+            logging.info("✅ pdf_uploads 已成功寫入 DeveloperDB。")
         except Exception as e:
-            logging.error(f"保存到 DevOpsDB (pdf_uploads) 資料庫時發生錯誤: {e}")
+            logging.error(f"❌ 儲存 pdf_uploads 時發生錯誤: {e}")
 
-    def save_to_file_names(self, chat_session_data: dict, doc_summary: list):
-        """
-        將文件上傳記錄（檔名、使用者、時間、摘要等）
-        儲存到資料庫中的 file_names 表格中。
-        """
-        # 取得當前上傳時間
-        upload_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    def save_to_file_names(self, chat_session_data: dict, doc_summary: str, tmp_name: str, org_name: str):
+        """將檔案名稱與摘要寫入 file_names 表格"""
+        upload_time = self._get_timestamp()
         username = chat_session_data.get('username', '')
         conversation_id = chat_session_data.get('conversation_id', '')
-        doc_names = chat_session_data.get('doc_names', {})
 
-        # 使用 zip() 將 doc_names 與對應摘要配對
-        for (tmp_name, org_name), summary_for_file in zip(doc_names.items(), doc_summary):
-            try:
-                # 寫入資料庫
+        try:
+            self.base_db.execute_query(
+                """
+                INSERT INTO file_names 
+                (upload_time, username, conversation_id, tmp_name, org_name, doc_summary) 
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (upload_time, username, conversation_id, tmp_name, org_name, doc_summary)
+            )
+            logging.info(f"✅ file_names 已寫入 DeveloperDB：{org_name}")
+        except Exception as e:
+            logging.error(f"❌ 儲存 file_names 時發生錯誤: {e}")
+
+    def save_retrieved_data_to_db(self, query: str, rewritten_query: str, retrieved_data: list, response: str, chat_session_data: dict):
+        """
+        儲存 RAG 查詢與檢索內容至 rag_history（主表）與 retrieved_docs（子表）
+        """
+        conversation_id = chat_session_data.get("conversation_id", "")
+        username = chat_session_data.get("username", "unknown")
+
+        try:
+            timestamp = self._get_timestamp()
+            rag_history_id = self.base_db.execute_query(
+                """
+                INSERT INTO rag_history (username, conversation_id, query, rewritten_query, response, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (username, conversation_id, query, rewritten_query, response, timestamp),
+                return_lastrowid=True
+            )
+
+            if rag_history_id is None:
+                logging.error("❌ 無法取得 rag_history_id，主表插入失敗")
+                return
+
+            for idx, doc in enumerate(retrieved_data, start=1):
+                content = getattr(doc, "page_content", str(doc))
+                metadata = json.dumps(getattr(doc, "metadata", {}), ensure_ascii=False)
+
                 self.base_db.execute_query(
                     """
-                    INSERT INTO file_names 
-                    (upload_time, username, conversation_id, tmp_name, org_name, doc_summary) 
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO retrieved_docs (rag_history_id, doc_index, content, metadata)
+                    VALUES (?, ?, ?, ?)
                     """,
-                    (upload_time, username, conversation_id, tmp_name, org_name, summary_for_file)
+                    (rag_history_id, idx, content, metadata)
                 )
-                logging.info(f"file_names 已成功保存到 DevOpsDB: tmp_name={tmp_name}, org_name={org_name}")
 
-            except Exception as e:
-                logging.error(f"file_names 保存到 DevOpsDB 時發生錯誤: {e}")
+            logging.info(f"✅ 已儲存 RAG 查詢與 {len(retrieved_data)} 筆檢索結果 (rag_history_id={rag_history_id})")
+
+        except Exception as e:
+            logging.error(f"❌ 儲存 RAG 資料時發生錯誤: {e}")

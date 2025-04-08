@@ -23,7 +23,7 @@ class MainContent:
         st.write(f'*Welcome {st.session_state.get("name", "Guest")}*')  # 顯示歡迎訊息
 
         # 撈取已上傳文件記錄 'doc_names'
-        file_names = UserRecordsDB(st.session_state.get("username")).get_active_window_file_names(self.chat_session_data)
+        file_names = UserRecordsDB(st.session_state.get("username")).get_doc_names(self.chat_session_data)
         if file_names and self.chat_session_data.get('agent') == '個人KM':
             st.write(f'**📚 {file_names}**')  # 顯示文件記錄
 

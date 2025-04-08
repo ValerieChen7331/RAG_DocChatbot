@@ -1,244 +1,210 @@
-import pandas as pd
+# database_userRecords.py
 import logging
+import json
+import pandas as pd
+from datetime import datetime
 from models.database_base import BaseDB
 from apis.file_paths import FilePaths
 
+# 設定 logging 等級
 logging.basicConfig(level=logging.INFO)
 
 
 class UserRecordsDB:
-    def __init__(self, username):
-        """ 初始化 UserRecordsDB 類別。 """
-        # 設定資料庫路徑
+    def __init__(self, username: str):
+        """初始化 UserRecordsDB 類別，建立與使用者相關的資料庫"""
+        self.username = username
         self.file_paths = FilePaths()
         self.db_path = self.file_paths.get_user_records_dir(username).joinpath(f"{username}.db")
-        # 創建 BaseDB 實例來處理資料庫操作
         self.base_db = BaseDB(self.db_path)
-        # 初始化資料庫表格
         self.base_db.ensure_db_path_exists()
-        self._init_db()
+        self._init_tables()  # 初始化所有資料表（包含聊天、檔案、RAG）
 
-    def _init_db(self):
-        """檢查資料庫文件是否存在，不存在則初始化資料庫。"""
-        if not self.db_path.exists():
-            # 定義聊天記錄表格的 SQL 語句
-            chat_history_query = '''
+    def _init_tables(self):
+        """初始化所有所需的資料表（第一次使用者登入時建立）"""
+        # 即使檔案已存在，仍然可確保表格存在（使用 CREATE TABLE IF NOT EXISTS）
+        table_creation_queries = {
+            "chat_history": """
                 CREATE TABLE IF NOT EXISTS chat_history (
                     id INTEGER PRIMARY KEY,
-                    agent TEXT,
-                    mode TEXT, 
-                    llm_option TEXT, 
-                    model TEXT, 
-                    db_source TEXT, 
-                    db_name TEXT,
-                    conversation_id TEXT, 
-                    active_window_index INTEGER,
-                    num_chat_windows INTEGER, 
-                    title TEXT,
-                    user_query TEXT, 
-                    ai_response TEXT
-                )
-            '''
-            # 執行創建聊天記錄表格的 SQL 語句
-            self.base_db.execute_query(chat_history_query)
-
-            # 定義 PDF 上傳記錄表格的 SQL 語句
-            pdf_uploads_query = '''
+                    agent TEXT, mode TEXT, llm_option TEXT, model TEXT,
+                    db_source TEXT, db_name TEXT, conversation_id TEXT,
+                    active_window_index INTEGER, num_chat_windows INTEGER,
+                    title TEXT, user_query TEXT, ai_response TEXT
+                )""",
+            "pdf_uploads": """
                 CREATE TABLE IF NOT EXISTS pdf_uploads (
                     id INTEGER PRIMARY KEY,
-                    conversation_id TEXT,
-                    agent TEXT,             
-                    embedding TEXT
-                )
-            '''
-            # 執行創建 PDF 上傳記錄表格的 SQL 語句
-            self.base_db.execute_query(pdf_uploads_query)
-
-            # 定義文件名稱記錄表格的 SQL 語句
-            file_names_query = '''
+                    conversation_id TEXT, agent TEXT, embedding TEXT
+                )""",
+            "file_names": """
                 CREATE TABLE IF NOT EXISTS file_names (
                     id INTEGER PRIMARY KEY,
+                    conversation_id TEXT, tmp_name TEXT, org_name TEXT, doc_summary TEXT
+                )""",
+            "rag_history": """
+                CREATE TABLE IF NOT EXISTS rag_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
                     conversation_id TEXT,
-                    tmp_name TEXT,             
-                    org_name TEXT,
-                    doc_summary TEXT
-                )
-            '''
-            # 執行創建文件名稱記錄表格的 SQL 語句
-            self.base_db.execute_query(file_names_query)
-            logging.info("UserRecordsDB 資料庫初始化成功。")
+                    query TEXT,
+                    rewritten_query TEXT,
+                    response TEXT,
+                    timestamp TEXT
+                )""",
+            "retrieved_docs": """
+                CREATE TABLE IF NOT EXISTS retrieved_docs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    rag_history_id INTEGER,
+                    doc_index INTEGER,
+                    content TEXT,
+                    metadata TEXT,
+                    FOREIGN KEY (rag_history_id) REFERENCES rag_history(id)
+                )"""
+        }
 
-    def load_database(self, database, columns=None) -> pd.DataFrame:
-        """
-        載入聊天記錄，並以 DataFrame 格式返回。
-        """
-        # 預設所有欄位
-        all_columns = [
-            'id', 'agent', 'mode', 'llm_option', 'model',
-            'db_source', 'db_name', 'conversation_id', 'active_window_index',
-            'num_chat_windows', 'title', 'user_query', 'ai_response'
-        ]
+        created_tables = []
 
-        # 如果未提供特定欄位，則使用預設的所有欄位
-        selected_columns = columns if columns else all_columns
-        # SQL 查詢語句
-        query = f"SELECT {', '.join(selected_columns)} FROM {database}"
+        for table_name, query in table_creation_queries.items():
+            try:
+                # 嘗試建立表格（若已存在則不會改變）
+                self.base_db.execute_query(query)
 
-        # 預設的空 DataFrame，用於返回無結果的情況
-        empty_df = pd.DataFrame(columns=selected_columns)
+                # 使用 sqlite_master 檢查是否存在該表
+                check_query = "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
+                result = self.base_db.fetch_query(check_query, (table_name,))
+                if result:
+                    created_tables.append(table_name)
+            except Exception as e:
+                logging.error(f"❌ 建立資料表 {table_name} 時發生錯誤: {e}")
 
+        if created_tables:
+            logging.info(f" 使用者資料庫初始化完成，已建立以下資料表：{', '.join(created_tables)}")
+
+    # ---------------------------------------
+    # 載入指定資料表內容（回傳 DataFrame）
+    # ---------------------------------------
+    def load_table(self, table_name: str, columns: list = None) -> pd.DataFrame:
+        """載入指定資料表內容，並以 pandas DataFrame 格式回傳"""
+        default_columns = {
+            'chat_history': [
+                'id', 'agent', 'mode', 'llm_option', 'model',
+                'db_source', 'db_name', 'conversation_id', 'active_window_index',
+                'num_chat_windows', 'title', 'user_query', 'ai_response'
+            ],
+            'rag_history': [
+                'id', 'conversation_id', 'query', 'rewritten_query', 'response', 'timestamp'
+            ],
+            'retrieved_docs': [
+                'id', 'rag_history_id', 'doc_index', 'content', 'metadata'
+            ]
+        }
+
+        selected_cols = columns or default_columns.get(table_name, ['*'])
+        query = f"SELECT {', '.join(selected_cols)} FROM {table_name}"
         try:
-            # 執行查詢，獲取數據
-            data = self.base_db.fetch_query(query)
-            if not data:
-                return empty_df
-
-            # 返回包含數據的 DataFrame
-            return pd.DataFrame(data, columns=selected_columns)
+            results = self.base_db.fetch_query(query)
+            return pd.DataFrame(results, columns=selected_cols) if results else pd.DataFrame(columns=selected_cols)
         except Exception as e:
-            # 捕捉錯誤，顯示錯誤訊息並返回空的 DataFrame
-            print(f"load_database 發生錯誤: {e}")
-            return empty_df
+            logging.error(f"❌ 載入 {table_name} 發生錯誤: {e}")
+            return pd.DataFrame(columns=selected_cols)
 
-    def update_chat_indexes(self, delete_index):
-        """更新聊天記錄索引。"""
-        chat_histories = self.base_db.fetch_query(
-            "SELECT id, active_window_index FROM chat_history ORDER BY active_window_index")
+    # ---------------------------------------
+    # 聊天資料：刪除、更新索引
+    # ---------------------------------------
+    def delete_chat_by_index(self, index: int):
+        """刪除指定聊天視窗索引的紀錄"""
+        self.base_db.execute_query("DELETE FROM chat_history WHERE active_window_index = ?", (index,))
 
-        for id, active_window_index in chat_histories:
-            if active_window_index > delete_index:
-                new_index = active_window_index - 1
+    def update_chat_indexes(self, deleted_index: int):
+        """更新聊天索引（當刪除一筆聊天視窗後）"""
+        rows = self.base_db.fetch_query("SELECT id, active_window_index FROM chat_history ORDER BY active_window_index")
+        for row_id, window_index in rows:
+            if window_index > deleted_index:
                 self.base_db.execute_query(
                     "UPDATE chat_history SET active_window_index = ? WHERE id = ?",
-                    (new_index, id))
-
-    # ===== Delete =====
-    def delete_chat_by_index(self, delete_index):
-        """刪除指定的聊天記錄。"""
-        self.base_db.execute_query(
-            "DELETE FROM chat_history WHERE active_window_index = ?",
-            (delete_index,))
-
-    # ===== Select=====
-    def get_active_window_setup(self, index, chat_session_data):
-        """
-        從資料庫中獲取並加載當前的聊天記錄。
-        """
-        try:
-            # 定義設置和歷史記錄的欄位名稱
-            setup_columns = ['conversation_id', 'agent', 'mode', 'llm_option', 'model', 'db_source', 'db_name', 'title']
-            history_columns = ['user_query', 'ai_response']
-
-            # 合併所有欄位名稱
-            all_columns = setup_columns + history_columns
-
-            # SQL 查詢，用於獲取指定 active_window_index 的聊天記錄
-            query = """
-                SELECT conversation_id, agent, mode, llm_option, model, db_source, db_name, title,
-                       user_query, ai_response
-                FROM chat_history 
-                WHERE active_window_index = ? 
-                ORDER BY id
-            """
-
-            # 執行查詢並獲取結果
-            active_window_setup = self.base_db.fetch_query(query, (index,))
-
-            if active_window_setup:
-                # 將查詢結果轉換為 DataFrame
-                df_check = pd.DataFrame(active_window_setup, columns=all_columns)
-
-                # 更新 chat_session_data 的設置列
-                for column in setup_columns:
-                    chat_session_data[column] = df_check[column].iloc[-1]
-
-                # 更新 chat_history 並轉換為字典格式
-                chat_history_df = df_check[history_columns]
-                chat_session_data['chat_history'] = chat_history_df.to_dict(orient='records')
-            else:
-                # 如果無結果，重置 chat_session_data 為預設值
-                # chat_session_data = self.reset_session_state_to_defaults()
-                chat_session_data = {}
-
-            return chat_session_data
-
-        except Exception as e:
-            print(f"get_active_window_setup 發生錯誤: {e}")
-
-    def get_active_window_file_names(self, chat_session_data):
-        """
-        從資料庫中獲取 file_names
-        """
-        try:
-            conversation_id = chat_session_data.get('conversation_id')
-            # SQL 查詢
-            query = """
-                        SELECT conversation_id, org_name
-                        FROM file_names 
-                        WHERE conversation_id = ?
-                    """
-
-            # 執行查詢
-            active_window_file_names = self.base_db.fetch_query(query, (conversation_id,))
-            if active_window_file_names:
-                # 將查詢結果中 org_name 欄位取出並組成字串
-                doc_names = ", ".join(row[1] for row in active_window_file_names)
-            else:
-                doc_names = ""
-            return doc_names
-
-        except Exception as e:
-            print(f"取得 get_active_window_file_names 時發生錯誤: {e}")
-            return ""
-
-    def get_active_window_doc_summary(self, chat_session_data):
-        """
-        從資料庫中取得指定 conversation_id 對話的所有檔案名稱及摘要
-        並格式化成可讀字串
-        """
-        try:
-            conversation_id = chat_session_data.get('conversation_id')
-            query = """
-                        SELECT org_name, doc_summary
-                        FROM file_names 
-                        WHERE conversation_id = ?
-                    """
-            results = self.base_db.fetch_query(query, (conversation_id,))
-            if results:
-                doc_summary = "\n\n".join(
-                    f"【{row[0]}】摘要：{row[1]}" for row in results
+                    (window_index - 1, row_id)
                 )
-            else:
-                doc_summary = ""
-            return doc_summary
 
+    # ---------------------------------------
+    # 聊天設定與歷史紀錄查詢
+    # ---------------------------------------
+    def get_active_window_setup(self, index: int, session_data: dict) -> dict:
+        """載入指定聊天視窗的設定與聊天內容，更新至 session_data"""
+        setup_cols = ['conversation_id', 'agent', 'mode', 'llm_option', 'model', 'db_source', 'db_name', 'title']
+        history_cols = ['user_query', 'ai_response']
+        all_cols = setup_cols + history_cols
+
+        query = f"""
+            SELECT {', '.join(all_cols)} FROM chat_history 
+            WHERE active_window_index = ? ORDER BY id
+        """
+
+        try:
+            records = self.base_db.fetch_query(query, (index,))
+            if not records:
+                return {}
+
+            df = pd.DataFrame(records, columns=all_cols)
+            for col in setup_cols:
+                session_data[col] = df[col].iloc[-1]
+            session_data['chat_history'] = df[history_cols].to_dict(orient='records')
+            return session_data
         except Exception as e:
-            print(f"取得 get_active_window_doc_summary 時發生錯誤: {e}")
+            logging.error(f"❌ 載入聊天設定發生錯誤: {e}")
+            return {}
+
+    # ---------------------------------------
+    # 檔案名稱、摘要查詢
+    # ---------------------------------------
+    def get_doc_names(self, session_data: dict) -> str:
+        """取得目前對話的所有原始檔名，使用逗號分隔"""
+        try:
+            conv_id = session_data.get('conversation_id')
+            rows = self.base_db.fetch_query("SELECT org_name FROM file_names WHERE conversation_id = ?", (conv_id,))
+            return ", ".join(row[0] for row in rows) if rows else ""
+        except Exception as e:
+            logging.error(f"❌ 取得 org_name 錯誤: {e}")
             return ""
 
-    # ===== Insert =====
-    def save_to_database(self, query: str, response: str, chat_session_data):
-        """
-        將查詢結果保存到資料庫中。
-        """
-        # 初始化資料字典，從 chat_session_data 中獲取數據
-        data = {key: chat_session_data.get(key, default) for key, default in {
-            'agent': None,
-            'mode': None,
-            'llm_option': None,
-            'model': None,
-            'db_source': None,
-            'db_name': None,
-            'conversation_id': None,
-            'active_window_index': 0,
-            'num_chat_windows': 0,
-            'title': None,
-            'user_query': query,
-            'ai_response': response
+    def get_doc_summaries(self, session_data: dict) -> str:
+        """取得每個檔案的摘要文字，格式化為【檔名】摘要：內容"""
+        try:
+            conv_id = session_data.get('conversation_id')
+            rows = self.base_db.fetch_query("SELECT org_name, doc_summary FROM file_names WHERE conversation_id = ?", (conv_id,))
+            return "\n\n".join(f"【{r[0]}】摘要：{r[1]}" for r in rows) if rows else ""
+        except Exception as e:
+            logging.error(f"❌ 取得摘要錯誤: {e}")
+            return ""
+
+    def get_org_file_name(self, session_data: dict, tmp_name: str) -> str:
+        """根據暫存檔名查詢原始檔名"""
+        conv_id = session_data.get("conversation_id")
+        if not conv_id or not tmp_name:
+            logging.warning("⚠️ conversation_id 或 tmp_name 為空，無法查詢 org_file_name")
+            return ""
+        try:
+            result = self.base_db.fetch_query(
+                "SELECT org_name FROM file_names WHERE conversation_id = ? AND tmp_name = ?",
+                (conv_id, tmp_name)
+            )
+            return result[0][0] if result else ""
+        except Exception as e:
+            logging.error(f"❌ 查詢 org_file_name 發生錯誤: {e}")
+            return ""
+
+    # ---------------------------------------
+    # 資料儲存：chat、uploads、file_names
+    # ---------------------------------------
+    def save_to_database(self, query: str, response: str, session_data: dict):
+        """儲存一筆聊天資料到 chat_history 表"""
+        data = {key: session_data.get(key, default) for key, default in {
+            'agent': None, 'mode': None, 'llm_option': None, 'model': None,
+            'db_source': None, 'db_name': None, 'conversation_id': None,
+            'active_window_index': 0, 'num_chat_windows': 0,
+            'title': None, 'user_query': query, 'ai_response': response
         }.items()}
 
         try:
-            # 插入資料到 chat_history 表格
             self.base_db.execute_query(
                 """
                 INSERT INTO chat_history 
@@ -249,58 +215,131 @@ class UserRecordsDB:
                 """,
                 tuple(data.values())
             )
-            logging.info("查詢結果已成功保存到資料庫 UserDB (chat_history)")
-
+            logging.info("✅ 成功儲存至 chat_history")
         except Exception as e:
-            logging.error(f"保存到 UserDB (chat_history) 資料庫時發生錯誤: {e}. Data: {data}")
+            logging.error(f"❌ 儲存 chat_history 時發生錯誤: {e}")
 
-    def save_to_pdf_uploads(self, chat_session_data):
-        """將查詢結果保存到 pdf_uploads 表格中。"""
-        # 初始化資料字典，從 chat_session_data 中獲取數據
-        data = {key: chat_session_data.get(key, default) for key, default in {
-            'conversation_id': None,
-            'agent': None,
-            'embedding': None
+    def save_to_pdf_uploads(self, session_data: dict):
+        """儲存 PDF 上傳記錄到 pdf_uploads 表"""
+        data = {key: session_data.get(key, default) for key, default in {
+            'conversation_id': None, 'agent': None, 'embedding': None
         }.items()}
 
         try:
-            # 插入資料到 pdf_uploads 表格
             self.base_db.execute_query(
-                """
-                INSERT INTO pdf_uploads 
-                (conversation_id, agent, embedding) 
-                VALUES (?, ?, ?)
-                """,
+                "INSERT INTO pdf_uploads (conversation_id, agent, embedding) VALUES (?, ?, ?)",
                 tuple(data.values())
             )
-            logging.info("查詢結果已成功保存到資料庫 UserDB (pdf_uploads)")
+            logging.info("✅ 成功儲存至 pdf_uploads")
         except Exception as e:
-            logging.error(f"保存到 UserDB (pdf_uploads) 資料庫時發生錯誤: {e}")
+            logging.error(f"❌ 儲存 pdf_uploads 發生錯誤: {e}")
 
-    def save_to_file_names(self, chat_session_data: dict, doc_summary: list):
+    def save_to_file_names(self, session_data: dict, doc_summary: str, tmp_name: str, org_name: str):
+        """儲存檔案名稱與摘要資料至 file_names 表"""
+        try:
+            self.base_db.execute_query(
+                "INSERT INTO file_names (conversation_id, tmp_name, org_name, doc_summary) VALUES (?, ?, ?, ?)",
+                (session_data.get('conversation_id'), tmp_name, org_name, doc_summary)
+            )
+            logging.info(f"✅ 儲存 file_names 成功：{org_name}")
+        except Exception as e:
+            logging.error(f"❌ 儲存 file_names 發生錯誤: {e}")
+
+    # ---------------------------------------
+    # 儲存：RAG 查詢與文件結果
+    # ---------------------------------------
+    def save_retrieved_data_to_db(self, query: str, rewritten_query: str, retrieved_data: list, response: str,
+                                  chat_session_data: dict):
         """
-        將當前聊天會話中處理的檔案名稱及對應摘要結果
-        儲存到資料庫中的 file_names 表格中。
+        儲存 RAG 查詢與檢索內容至資料庫中的 rag_history（主表）與 retrieved_docs（子表）
+        - query: 使用者原始提問
+        - rewritten_query: 重寫後的查詢內容
+        - retrieved_data: 檢索結果列表，每個元素為 Document
+        - response: AI 回覆內容
+        - conversation_id: 所屬對話 ID
         """
+        try:
+            timestamp = datetime.now().isoformat()
+            conversation_id = chat_session_data.get("conversation_id", "")
 
-        conversation_id = chat_session_data.get('conversation_id', None)
-        doc_names = chat_session_data.get('doc_names', {})
+            # 🔹 先將主查詢資料儲存到 rag_history，並取得自動產生的主鍵 ID
+            rag_history_id = self.base_db.execute_query(
+                """
+                INSERT INTO rag_history (conversation_id, query, rewritten_query, response, timestamp)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (conversation_id, query, rewritten_query, response, timestamp),
+                return_lastrowid=True  # ✅ 關鍵參數：取得剛插入資料的主鍵 ID
+            )
 
-        # 使用 zip() 同步配對 doc_names.items() 與 doc_summary
-        for (tmp_name, org_name), summary_for_file in zip(doc_names.items(), doc_summary):
-            try:
-                # 將 conversation_id、暫存檔名、原始檔名與對應摘要儲存到資料表
+            # 🔸 防呆：若主表未成功插入則中止流程
+            if rag_history_id is None:
+                logging.error("❌ 無法取得 rag_history_id，主表插入可能失敗")
+                return
+
+            # 🔹 將檢索到的每一筆文件內容儲存到 retrieved_docs 子表
+            for idx, doc in enumerate(retrieved_data, start=1):
+                content = getattr(doc, "page_content", str(doc))
+                metadata = json.dumps(getattr(doc, "metadata", {}), ensure_ascii=False)
+
                 self.base_db.execute_query(
                     """
-                    INSERT INTO file_names 
-                    (conversation_id, tmp_name, org_name, doc_summary) 
+                    INSERT INTO retrieved_docs (rag_history_id, doc_index, content, metadata)
                     VALUES (?, ?, ?, ?)
                     """,
-                    (conversation_id, tmp_name, org_name, summary_for_file)
+                    (rag_history_id, idx, content, metadata)
                 )
-                logging.info(f"file_names 已成功儲存到 UserDB: tmp_name={tmp_name}, org_name={org_name}")
 
-            except Exception as e:
-                logging.error(f"file_names 儲存到 UserDB 時發生錯誤: {e}")
+            # ✅ 成功後記錄總筆數
+            logging.info(
+                f"✅ 成功儲存 RAG 查詢與 {len(retrieved_data)} 筆檢索內容至資料庫 (rag_history_id={rag_history_id})")
 
+        except Exception as e:
+            logging.error(f"❌ 儲存 RAG 資料時發生錯誤: {e}")
 
+    # ---------------------------------------
+    # 查詢：依 conversation_id 查詢 RAG 記錄
+    # ---------------------------------------
+    def get_rag_records_by_conversation_id(self, conversation_id: str) -> list:
+        """
+        根據 conversation_id 查詢 rag_history 主表與 retrieved_docs 子表內容。
+        回傳格式為 List[Dict]，每筆包含 query、response、retrieved_docs 等欄位。
+        """
+        try:
+            rag_rows = self.base_db.fetch_query(
+                """
+                SELECT id, query, rewritten_query, response, timestamp
+                FROM rag_history
+                WHERE conversation_id = ?
+                """,
+                (conversation_id,)
+            )
+
+            results = []
+            for row in rag_rows:
+                rag_id, query, rewritten_query, response, timestamp = row
+
+                # 查詢對應的文件內容
+                doc_rows = self.base_db.fetch_query(
+                    "SELECT doc_index, content, metadata FROM retrieved_docs WHERE rag_history_id = ? ORDER BY doc_index",
+                    (rag_id,)
+                )
+
+                retrieved_docs = [
+                    {'doc_index': d[0], 'content': d[1], 'metadata': json.loads(d[2])}
+                    for d in doc_rows
+                ]
+
+                results.append({
+                    'query': query,
+                    'rewritten_query': rewritten_query,
+                    'response': response,
+                    'timestamp': timestamp,
+                    'retrieved_docs': retrieved_docs
+                })
+
+            return results
+
+        except Exception as e:
+            logging.error(f"❌ 查詢 RAG 記錄失敗: {e}")
+            return []

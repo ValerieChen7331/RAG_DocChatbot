@@ -16,7 +16,7 @@ class SessionInitializer:
         """初始化 Session 狀態，並儲存到字典 chat_session_data 中。"""
         # 從 user_records_db 載入資料
         userRecords_db = UserRecordsDB(self.username)
-        database = userRecords_db.load_database(
+        database = userRecords_db.load_table(
             'chat_history',
             ['active_window_index'])
 

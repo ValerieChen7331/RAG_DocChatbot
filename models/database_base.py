@@ -12,12 +12,13 @@ class BaseDB:
         """確保資料庫文件夾存在。"""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def execute_query(self, query: str, params=()):
-        """執行資料庫的寫入操作。"""
+    def execute_query(self, query, params=(), return_lastrowid=False):
         try:
             with sqlite3.connect(self.db_path) as conn:
-                conn.execute(query, params)
+                cursor = conn.cursor()
+                cursor.execute(query, params)
                 conn.commit()
+                return cursor.lastrowid if return_lastrowid else None
         except sqlite3.OperationalError as e:
             logging.error(f"execute_query 資料庫操作錯誤: {e}")
             raise

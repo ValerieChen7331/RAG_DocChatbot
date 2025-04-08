@@ -12,7 +12,7 @@ class UIController:
         """根據窗口索引返回標題"""
         # 從資料庫加載數據
         userRecords_db = UserRecordsDB(self.username)
-        df_database = userRecords_db.load_database(
+        df_database = userRecords_db.load_table(
             'chat_history',
             ['active_window_index', 'title'])
         df_window = df_database[df_database['active_window_index'] == index]
