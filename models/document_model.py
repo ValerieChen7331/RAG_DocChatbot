@@ -3,10 +3,14 @@ from langchain_chroma import Chroma
 from apis.file_paths import FilePaths
 from apis.embedding_api import EmbeddingAPI
 import os
-from langchain.document_loaders import PyPDFDirectoryLoader, TextLoader
+from langchain.text_splitter import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 import logging
 from pathlib import Path
+from typing import List
+from langchain.document_loaders import PyMuPDFLoader as PyMuPDF4LLMLoader, TextLoader
+from langchain.schema import Document
 
+# 關閉 Chroma 遠端遙測資料收集（保護使用者隱私）
 os.environ["CHROMA_TELEMETRY"] = "False"
 
 # 設定日誌記錄的級別為 INFO
@@ -22,44 +26,74 @@ class DocumentModel:
         conversation_id = self.chat_session_data.get("conversation_id")
         self.tmp_dir = self.file_paths.get_tmp_dir(username, conversation_id)
         self.vector_store_dir = self.file_paths.get_local_vector_store_dir(username, conversation_id)
-    def create_temporary_files(self, source_docs):
-        """根據上傳檔案類型（pdf / md）建立臨時文件並返回檔案名稱對應關係。"""
+
+    from typing import Tuple
+
+    def create_temporary_files(self, source_doc) -> Tuple[str, str]:
+        """根據上傳檔案類型（pdf / md）建立臨時文件並返回 (臨時檔名, 原始檔名)。"""
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
-        doc_names = {}
 
-        for source_doc in source_docs:
-            file_ext = source_doc.get('type', 'pdf')  # 預設為 pdf，如果有 type 字段就用 type
-            suffix = f'.{file_ext}'
-            with tempfile.NamedTemporaryFile(delete=False, dir=self.tmp_dir.as_posix(), suffix=suffix) as tmp_file:
-                tmp_file.write(source_doc['content'])  # 寫入文件內容
-                file_name = Path(tmp_file.name).name
-                doc_names[file_name] = source_doc['name']
-                logging.info(f"Created temporary file: {file_name}")
+        file_ext = source_doc.get('type', 'pdf')  # 預設為 pdf，如果有 type 字段就用 type
+        suffix = f'.{file_ext}'
 
-        return doc_names
+        with tempfile.NamedTemporaryFile(delete=False, dir=self.tmp_dir.as_posix(), suffix=suffix) as tmp_file:
+            tmp_file.write(source_doc['content'])  # 寫入文件內容
+            tmp_name = Path(tmp_file.name).name
+            org_name = source_doc['name']
+            logging.info(f"Created temporary file: {tmp_name}")
+        return tmp_name, org_name
 
-    def load_documents(self):
+    def load_documents(self) -> Document:
         """從臨時目錄中加載 PDF 和 MD 文件"""
-        documents = []
+        self._pdf_to_md()
+        document = self._load_md_file()
+        return document
 
-        # 載入 PDF 文件
-        pdf_loader = PyPDFDirectoryLoader(self.tmp_dir.as_posix(), glob='**/*.pdf')
-        pdf_documents = pdf_loader.load()
-        documents.extend(pdf_documents)
+    def _pdf_to_md(self):
+        """
+        載入 PDF，轉為 Markdown，並儲存在相同目錄
+        """
+        for pdf in self.tmp_dir.rglob("*.pdf"):
+            try:
+                logging.info(f"🔄 載入 PDF：{pdf.name}")
+                loader = PyMuPDF4LLMLoader(pdf.as_posix())
+                docs = loader.load()
 
-        # 載入 MD 文件
+                # 儲存為 Markdown
+                md_path = self.tmp_dir / f"{pdf.stem}.md"
+                try:
+                    with open(md_path, "w", encoding="utf-8") as f:
+                        for doc in docs:
+                            f.write(doc.page_content + "\n\n---\n\n")
+                    logging.info(f"📝 已儲存 PDF 轉 Markdown：{md_path.name}")
+                except Exception as e:
+                    logging.warning(f"⚠️ 儲存 Markdown 失敗：{md_path.name}，錯誤：{e}")
+            except Exception as e:
+                logging.warning(f"❌ PDF 載入失敗：{pdf.name}，錯誤：{e}", exc_info=True)
+
+    def _load_md_file(self) -> Document:
+        """
+        載入單一 Markdown 檔案內容並回傳 Document
+        """
         md_files = list(self.tmp_dir.rglob('*.md'))
-        for md_file in md_files:
+        if not md_files:
+            raise FileNotFoundError("❗ 找不到任何 Markdown (.md) 檔案。")
+
+        md_file = md_files[0]  # 只處理第一個檔案
+
+        try:
             loader = TextLoader(md_file.as_posix(), encoding='utf-8')
             md_documents = loader.load()
-            documents.extend(md_documents)
 
-        if not documents:
-            raise ValueError("No documents loaded. Please check the PDF or MD files.")
+            if not md_documents:
+                raise ValueError("❗ 找到 Markdown 檔案，但讀取內容為空。")
 
-        logging.info(f"Loaded {len(documents)} documents (PDF + MD)")
+            logging.info(f"✅ 已載入 Markdown 文件：{md_file.name}")
+            return md_documents[0]  # 只取第一份文件
 
-        return documents
+        except Exception as e:
+            logging.warning(f"⚠️ 載入 Markdown 文件失敗：{md_file.name}，錯誤：{e}")
+            raise e
 
     def delete_temporary_files(self):
         # 刪除臨時文件
@@ -70,76 +104,82 @@ class DocumentModel:
             except Exception as e:
                 logging.error(f"Error deleting file {file}: {e}")
 
-    def split_documents_into_chunks_1(self, documents):
+    def chunk_document_with_md(self, document: Document, org_name: str, header_depth: int = 3):
         """
-        將文件拆分為基於標題的結構和字元級內容小塊。
+        將 Markdown 文檔依照標題與字元級拆分成多個小 chunk。
+        支援自定義 Markdown 標題深度（例如 Header 1 ~ Header 6）。
+        每個 chunk 都會附帶 metadata 與原始檔案名稱。
         """
-        # 引入所需模組
-        from langchain.text_splitter import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
-        from langchain.docstore.document import Document
-        import logging
 
-        document_chunks = []  # 用於存儲拆分後的小塊
-        combined_markdown_content = ""  # 用於合併所有文檔內容
+        document_chunks = []  # 用來暫存每個拆分出來的小段落
 
-        # 處理輸入文檔，將其合併為一個 Markdown 字串
-        for doc in documents:
-            if hasattr(doc, "page_content") and doc.page_content:
-                combined_markdown_content += str(doc.page_content)  # 合併有效內容
-            else:
-                logging.warning("跳過一個無內容的文檔。")  # 記錄無內容文檔的警告
-                continue
+        # 1. 動態建立 Markdown 標題層級（例如: [('#', 'Header 1'), ..., ('######', 'Header 6')])
+        headers_to_split_on = [(f"{'#' * i}", f"Header {i}") for i in range(1, header_depth + 1)]
 
-        # 使用 MarkdownHeaderTextSplitter 進行基於標題的拆分
-        headers_to_split_on = [
-            ("#", "Header 1"),
-            ("##", "Header 2"),
-        ]
-
+        # 2. 使用 MarkdownHeaderTextSplitter 按標題區塊拆分
         markdown_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
-        md_header_splits = markdown_splitter.split_text(combined_markdown_content)  # 按標題拆分文檔
 
-        # 定義字元級拆分器
-        chunk_size = 800  # 每個塊的大小
-        chunk_overlap = 300  # 塊的重疊大小
+        # 傳入純文字內容做拆分（不能是整個 Document 物件）
+        md_header_splits = markdown_splitter.split_text(document.page_content)
+
+        # 3. 使用遞迴式字元切割器進行段落內部細拆
+        chunk_size = 800  # 每個小塊的最大字元數
+        chunk_overlap = 300  # 每塊之間的重疊字數
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
-        # 處理每個標題分組
+        # 對每個 Markdown 標題段落做進一步切割
         for header_group in md_header_splits:
-            # 將每個標題組中的內容拆分為小塊
+            # 拆成更小的 chunk
             splits = text_splitter.split_text(header_group.page_content)
+
             for split in splits:
+                # 將拆出來的小段落與 metadata 一起存起來
                 document_chunks.append({
-                    "page_content": split,  # 小塊內容
-                    "metadata": header_group.metadata  # 對應的標題元數據
+                    "page_content": split,
+                    "metadata": header_group.metadata,
+                    "org_name": org_name
                 })
 
-        # 將拆分後的塊轉換為 LangChain Document 格式
+        # 4. 將所有小段落轉換成 LangChain 的 Document 格式
         transformed_documents = []
         for i, chunk in enumerate(document_chunks):
+            # 將原始檔名與標題 metadata 合併進 metadata，並加上 page 編號
             transformed_documents.append(
                 Document(
-                    metadata={**chunk["metadata"], 'page': i},  # 新增頁碼到元數據
-                    page_content=chunk["page_content"] + "\n" + str(chunk["metadata"])  # 添加元數據信息
+                    metadata={**chunk["metadata"], 'page': i, 'org_name': chunk["org_name"]},
+                    page_content=chunk["org_name"] + "\n" + str(chunk["metadata"]) + "\n" + chunk["page_content"]
                 )
             )
+            # 印出每塊的 metadata 做 Debug
+            print("1. chunk[metadata]:", chunk["metadata"])
 
-        # 記錄拆分完成的日誌
-        logging.info(f"成功將文檔拆分為 {len(transformed_documents)} 個塊。")
+        # 記錄成功資訊
+        logging.info(f"✅ 成功將文檔拆分為 {len(transformed_documents)} 個塊。")
 
         return transformed_documents
 
-    def embeddings_on_local_vectordb(self, document_chunks):
-        # 將文檔塊嵌入本地向量數據庫，並返回檢索器設定
+    def embed_into_vectordb(self, document_chunks):
+        """
+        將已拆分的文件區塊（chunks）嵌入至本地向量資料庫（使用 Chroma），以便後續檢索使用。
+        """
+        # 從 chat_session_data 中取得用戶指定的嵌入模式
         mode = self.chat_session_data.get("mode")
         embedding = self.chat_session_data.get("embedding")
-        embedding_function = EmbeddingAPI.get_embedding_function(mode, embedding)
-        if not document_chunks:
-            raise ValueError("No document chunks to embed. Please check the text splitting process.")
 
+        # 透過嵌入 API 取得對應的嵌入函式（embedding function）
+        embedding_function = EmbeddingAPI.get_embedding_function(mode, embedding)
+
+        # 若文件區塊為空，拋出錯誤提示
+        if not document_chunks:
+            raise ValueError("❗ 找不到文件區塊可供嵌入。請確認文件是否已成功切分。")
+
+        # 使用 Chroma 向量資料庫，將文件區塊嵌入並儲存至本地磁碟
         Chroma.from_documents(
-            documents=document_chunks,
-            embedding=embedding_function,
-            persist_directory=self.vector_store_dir.as_posix()
+            documents=document_chunks,  # 要嵌入的 LangChain Document 物件清單
+            embedding=embedding_function,  # 使用的嵌入函式
+            persist_directory=self.vector_store_dir.as_posix()  # 本地向量資料庫儲存路徑
         )
-        logging.info(f"Persisted vector DB at {self.vector_store_dir}")
+
+        # 記錄成功訊息：表示資料已成功嵌入並儲存
+        logging.info(f"✅ 向量資料庫已成功儲存於：{self.vector_store_dir}")
+
