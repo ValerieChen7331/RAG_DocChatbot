@@ -103,7 +103,7 @@ class LLMModel:
         """
         return PromptTemplate(input_variables=["query"], template=template)
 
-    def doc_summary(self, documents: List) -> List[str]:
+    def doc_summary(self, doc) -> str:
         """
         使用 LLM 對文件內容進行摘要，回傳多個摘要文字清單。
         """
@@ -113,22 +113,19 @@ class LLMModel:
             # 取得摘要所需 prompt 模板
             prompt_template = self._doc_summary_prompt()
 
-            summaries = []
-            # 對每個 Document 個別產生摘要
-            for doc in documents:
-                # 將每份文件內容填入 prompt
-                formatted_prompt = prompt_template.format(documents=doc.page_content)
-                # 呼叫 LLM 取得摘要
-                doc_summary = llm.invoke(formatted_prompt)
-                # 如果是外部 LLM，取 .content
-                if self.chat_session_data.get('mode') != '內部LLM':
-                    doc_summary = doc_summary.content
-                # 儲存摘要文字
-                summaries.append(doc_summary.strip())
+            # 將每份文件內容填入 prompt
+            formatted_prompt = prompt_template.format(documents=doc.page_content)
+            # 呼叫 LLM 取得摘要
+            doc_summary = llm.invoke(formatted_prompt)
+            # 如果是外部 LLM，取 .content
+            if self.chat_session_data.get('mode') != '內部LLM':
+                doc_summary = doc_summary.content
+            # 儲存摘要文字
+            summaries = doc_summary.strip()
             return summaries
         except Exception as e:
             print(f"doc_summary 時發生錯誤: {e}")
-            return []
+            return ""
 
     def _doc_summary_prompt(self):
         """
