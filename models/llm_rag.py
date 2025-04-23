@@ -79,6 +79,8 @@ class RAGModel:
                 "chat_history": self._get_chat_history_from_session().messages
             })
 
+            print("1. retrieved_documents: ", retrieved_documents)
+
             return response, retrieved_documents, rewritten_query
 
         except Exception as e:

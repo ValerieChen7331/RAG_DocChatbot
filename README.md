@@ -8,7 +8,7 @@
 
 ---
 
-## 🚀 執行步驟
+## ⚙️ 執行步驟
 ### 1️⃣ 安裝依賴
 ```bash
 pip install -r requirements.txt
@@ -70,7 +70,7 @@ streamlit run rag_app.py
 * 避免耦合: 📄 rag_app.py ➡ 📁 views ➡ 📁 controllers ➡ 📁 services ➡ 📁 models ➡ 📁 apis
 ```
 RAG_DocChatbot/
- ├─ 📄 rag_app.py          # 主程式入口（Streamlit 啟動點）
+ ├─ 📦 rag_app.py          # 📌 主程式入口（Streamlit 啟動點）
  ├─ 📁 views               # 前端元件（Streamlit 畫面）
  │   ├─ main_page_content.py
  │   └─ main_page_sidebar.py
@@ -92,9 +92,9 @@ RAG_DocChatbot/
  │   ├─ file_paths.py
  │   └─ llm_api.py
  ├─ 📁 data                # 動態產生的用戶資料與結果
- │   ├─ developer/
- │   └─ user/
- └─ 📄 .env                # 環境變數設定檔
+ │   ├─ 📁 developer/
+ │   └─ 📁 user/
+ └─  .env                # 環境變數設定檔
 ```
 
 ---
