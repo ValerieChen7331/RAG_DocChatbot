@@ -13,8 +13,8 @@ class Sidebar:
 
         # 內部或外部 LLM
         self.mode_options = ['內部LLM', '外部LLM']
-        # 內部 LLM 選項
-        self.llm_options_internal = ["Gemma2:27b", "Taiwan-Llama3-16f"]
+        # 內部 LLM 選項"
+        self.llm_options_internal = ["Gemma3_27b", "Deepseek_14b", "QWQ_32b", "Taiwan_LLaMA3_8b_Instruct"]
         # 外部 LLM 選項
         self.llm_options_external = ["gpt-4o", "gpt-4o-mini", "gpt-4", "gpt-35-turbo"]
         # 內部嵌入模型選項
