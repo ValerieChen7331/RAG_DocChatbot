@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 from controllers.initialize import SessionInitializer
 from views.main_page_sidebar import Sidebar
 from views.main_page_content import MainContent
@@ -15,6 +16,7 @@ class MainPage:
         """
         顯示主頁面並處理使用者互動。
         """
+
         # 第一次執行時進行 session_state 初始化
         if not st.session_state.get("is_initialized"):
             username = st.session_state.get("username")
@@ -42,11 +44,39 @@ class MainPage:
             except Exception as e:
                 st.error(f"處理請求時發生錯誤: {e}")
 
+        if chat_session_data.get('agent') in ['個人KM']:
+            # ✅ CSV 批量測試按鈕
+            if st.button("批次測試: QAData_1819.csv"):
+                self._run_csv_queries(chat_session_data)
+
+    def _run_csv_queries(self, chat_session_data, qa_path="mockdata/QAData_1819.csv"):
+        """
+        從指定的 CSV 中依序讀取問題，並呼叫 LLM 回答顯示在畫面上
+        :param chat_session_data: Streamlit session 中的對話狀態
+        :param qa_path: CSV 檔案路徑，預設為 QAData_1819.csv
+        """
+        try:
+            df = pd.read_csv(qa_path)
+        except Exception as e:
+            st.error(f"❌ 無法讀取 CSV 檔案：{e}")
+            return
+
+        for idx, row in df.iterrows():
+            query = row['Question']
+            st.chat_message("human").write(query)
+            try:
+                response, chat_session_data = LLMService(chat_session_data).query(query)
+                st.chat_message("ai").write(response)
+            except Exception as e:
+                st.chat_message("ai").write(f"❌ 查詢錯誤：{e}")
+
+
 def main():
     """
     程式進入點，啟動主頁面功能。
     """
     MainPage().show()
+
 
 if __name__ == "__main__":
     main()

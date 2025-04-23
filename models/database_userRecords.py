@@ -5,6 +5,7 @@ import pandas as pd
 from datetime import datetime
 from models.database_base import BaseDB
 from apis.file_paths import FilePaths
+import traceback
 
 # 設定 logging 等級
 logging.basicConfig(level=logging.INFO)
@@ -56,6 +57,7 @@ class UserRecordsDB:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     rag_history_id INTEGER,
                     doc_index INTEGER,
+                    chunk_id INTEGER,
                     content TEXT,
                     metadata TEXT,
                     FOREIGN KEY (rag_history_id) REFERENCES rag_history(id)
@@ -95,7 +97,7 @@ class UserRecordsDB:
                 'id', 'conversation_id', 'query', 'rewritten_query', 'response', 'timestamp'
             ],
             'retrieved_docs': [
-                'id', 'rag_history_id', 'doc_index', 'content', 'metadata'
+                'id', 'rag_history_id', 'doc_index', 'chunk_id', 'content', 'metadata'
             ]
         }
 
@@ -256,46 +258,48 @@ class UserRecordsDB:
         - rewritten_query: 重寫後的查詢內容
         - retrieved_data: 檢索結果列表，每個元素為 Document
         - response: AI 回覆內容
-        - conversation_id: 所屬對話 ID
+        - chat_session_data: 包含 conversation_id 的字典
         """
         try:
             timestamp = datetime.now().isoformat()
             conversation_id = chat_session_data.get("conversation_id", "")
 
-            # 🔹 先將主查詢資料儲存到 rag_history，並取得自動產生的主鍵 ID
+            # 🔹 儲存主查詢至 rag_history 表，取得自動產生的主鍵 ID
             rag_history_id = self.base_db.execute_query(
                 """
                 INSERT INTO rag_history (conversation_id, query, rewritten_query, response, timestamp)
                 VALUES (?, ?, ?, ?, ?)
                 """,
                 (conversation_id, query, rewritten_query, response, timestamp),
-                return_lastrowid=True  # ✅ 關鍵參數：取得剛插入資料的主鍵 ID
+                return_lastrowid=True
             )
 
-            # 🔸 防呆：若主表未成功插入則中止流程
+            # 🔸 若主鍵插入失敗則中止
             if rag_history_id is None:
                 logging.error("❌ 無法取得 rag_history_id，主表插入可能失敗")
                 return
 
-            # 🔹 將檢索到的每一筆文件內容儲存到 retrieved_docs 子表
+            # 🔹 儲存每筆檢索文件至 retrieved_docs 子表
             for idx, doc in enumerate(retrieved_data, start=1):
                 content = getattr(doc, "page_content", str(doc))
-                metadata = json.dumps(getattr(doc, "metadata", {}), ensure_ascii=False)
+                metadata_dict = getattr(doc, "metadata", {})
+                metadata = json.dumps(metadata_dict, ensure_ascii=False)
+                chunk_id = metadata_dict.get("chunk_id", 1000)  # ✅ 正確從 metadata 中取得 chunk_id
 
                 self.base_db.execute_query(
                     """
-                    INSERT INTO retrieved_docs (rag_history_id, doc_index, content, metadata)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO retrieved_docs (rag_history_id, doc_index, chunk_id, content, metadata)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
-                    (rag_history_id, idx, content, metadata)
+                    (rag_history_id, idx, chunk_id, content, metadata)
                 )
 
-            # ✅ 成功後記錄總筆數
             logging.info(
-                f"✅ 成功儲存 RAG 查詢與 {len(retrieved_data)} 筆檢索內容至資料庫 (rag_history_id={rag_history_id})")
+                f"✅ 成功儲存 RAG 查詢與 {len(retrieved_data)} 筆檢索內容至資料庫 (rag_history_id={rag_history_id})"
+            )
 
         except Exception as e:
-            logging.error(f"❌ 儲存 RAG 資料時發生錯誤: {e}")
+            logging.error("❌ 儲存 RAG 資料時發生錯誤:\n" + traceback.format_exc())
 
     # ---------------------------------------
     # 查詢：依 conversation_id 查詢 RAG 記錄

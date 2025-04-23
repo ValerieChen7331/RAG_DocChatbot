@@ -146,12 +146,10 @@ class DocumentModel:
             # 將原始檔名與標題 metadata 合併進 metadata，並加上 page 編號
             transformed_documents.append(
                 Document(
-                    metadata={**chunk["metadata"], 'page': i, 'org_name': chunk["org_name"]},
+                    metadata={**chunk["metadata"], 'chunk_id': i+1, 'org_name': chunk["org_name"]},
                     page_content=chunk["org_name"] + "\n" + str(chunk["metadata"]) + "\n" + chunk["page_content"]
                 )
             )
-            # 印出每塊的 metadata 做 Debug
-            print("1. chunk[metadata]:", chunk["metadata"])
 
         # 記錄成功資訊
         logging.info(f"✅ 成功將文檔拆分為 {len(transformed_documents)} 個塊。")
