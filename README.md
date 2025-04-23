@@ -50,7 +50,7 @@ streamlit run rag_app.py
 - 評估項目：回答一致性、正確率、相似度 (LLM 判分)
 - 支援地線與雲端模型混合評估
 - 輸出 CSV 結果，便於視覺化、報表生成、模型選型
-- 詳細請觀 [evaluation 說明文件](evaluation/README.md)
+- 詳細請觀 [evaluation 說明文件](evaluation/README_evaluation.md)
 
 ---
 
