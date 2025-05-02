@@ -1,7 +1,7 @@
 import logging
 from models.document_model import DocumentModel
 from models.database_userRecords import UserRecordsDB
-from models.database_devOps import DeveloperDB
+from models.database_developer import DeveloperDB
 from models.llm_model import LLMModel
 
 logging.basicConfig(level=logging.INFO)

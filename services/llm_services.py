@@ -2,7 +2,7 @@
 from models.llm_model import LLMModel
 from models.llm_rag import RAGModel
 from models.database_userRecords import UserRecordsDB
-from models.database_devOps import DeveloperDB
+from models.database_developer import DeveloperDB
 
 class LLMService:
     def __init__(self, chat_session_data):
