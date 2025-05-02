@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 import pandas as pd
 from controllers.initialize import SessionInitializer
@@ -67,6 +68,7 @@ class MainPage:
             try:
                 response, chat_session_data = LLMService(chat_session_data).query(query)
                 st.chat_message("ai").write(response)
+
             except Exception as e:
                 st.chat_message("ai").write(f"❌ 查詢錯誤：{e}")
 

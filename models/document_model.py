@@ -7,7 +7,8 @@ from langchain.text_splitter import MarkdownHeaderTextSplitter, RecursiveCharact
 import logging
 from pathlib import Path
 from typing import List
-from langchain.document_loaders import PyMuPDFLoader as PyMuPDF4LLMLoader, TextLoader
+# from langchain.document_loaders import PyMuPDFLoader as PyMuPDF4LLMLoader, TextLoader
+from langchain_community.document_loaders import PyMuPDFLoader as PyMuPDF4LLMLoader, TextLoader
 from langchain.schema import Document
 
 # 關閉 Chroma 遠端遙測資料收集（保護使用者隱私）
