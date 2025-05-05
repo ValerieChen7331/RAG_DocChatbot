@@ -3,7 +3,7 @@
 ## 🌟 專案目標
 本專案是一個 Retrieval-Augmented Generation (RAG) 文件検索聊天機器人，能根據使用者上傳的資料 (KEYPO 功能手冊文件) 進行検索並提供正確回覆。
 - 當知識庫中找不到答案時，會明確回覆「不知道」，避免產生幻覺回覆
-- 影片連結：[Demo Video](https://drive.google.com/file/d/1zonmd5DjB4uLdw6tDbIPVid_UjjnNGO2/view?usp=drive_link)
+- 影片連結：[Demo Video](RAG_DocChatbot_20250324.gif)
 
 ---
 
