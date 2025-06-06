@@ -7,6 +7,9 @@ from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.prompts import PromptTemplate
 import re
+import sys
+sys.stdout.reconfigure(encoding='utf-8')
+
 from typing import List, Dict
 
 # 預設是否開啟 query_llm_direct 的聊天記憶功能
@@ -29,6 +32,7 @@ class LLMModel:
         """
         # 根據模式與模型選項取得 LLM 物件
         llm = LLMAPI.get_llm(self.mode, self.llm_option)
+        print(" query_llm_direct(llm_option)", self.llm_option)
 
         # 🔁 是否使用歷史對話記憶（優先取 session 中設定，其次取預設常數）
         use_memory = self.chat_session_data.get("use_memory", DEFAULT_USE_CHAT_HISTORY)
@@ -68,6 +72,7 @@ class LLMModel:
                 memory=self.chat_session_data[memory_key],
                 prompt=ChatPromptTemplate.from_template(init_prompt)
             )
+
             result = conversation_chain.invoke(input=query)
             response = result.get('response', '')
 

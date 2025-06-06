@@ -16,7 +16,7 @@ class Sidebar:
         # 內部 LLM 選項"
         self.llm_options_internal = ["Gemma3_27b", "Gemma2_27b", "QWQ_32b", "Phi4_14b", "Taiwan_LLaMA3_8b_Instruct", "Mistral_7b_Instruct"]
         # 外部 LLM 選項
-        self.llm_options_external = ["gpt-4o", "gpt-4o-mini", "gpt-4", "gpt-35-turbo"]
+        self.llm_options_external = ["gpt-4o", "gpt-4.1", "gpt-4.1-mini", "o1", "o1-mini", "o3-mini", "o4-mini"]
         # 內部嵌入模型選項
         self.embedding_options_internal = ["bge-m3"]
         # 外部嵌入模型選項

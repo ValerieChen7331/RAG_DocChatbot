@@ -6,6 +6,7 @@ class MainContent:
     def __init__(self, chat_session_data):
         """初始化主內容物件"""
         self.chat_session_data = chat_session_data
+        print("MainContent-chat_session_data: ", chat_session_data)
 
     def display(self):
         """顯示主內容"""

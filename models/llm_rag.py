@@ -125,7 +125,7 @@ class RAGModel:
         try:
             # 1. 取得 LLM 與 Embedding function
             llm = LLMAPI.get_llm(self.mode, self.llm_option)
-            embed_fn = EmbeddingAPI.get_embedding_function("內部LLM", self.chat_session_data.get("embedding"))
+            embed_fn = EmbeddingAPI.get_embedding_function(self.mode, self.chat_session_data.get("embedding"))
 
             # 2. 向量資料庫
             self.vector_db = Chroma(

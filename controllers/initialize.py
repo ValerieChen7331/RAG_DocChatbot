@@ -37,9 +37,9 @@ class SessionInitializer:
             'agent': '一般助理',
             'mode': '內部LLM',
             'llm_option': 'Gemma2:27b',
-            'model': 'gemma2:27b-instruct-q5_0',
-            'api_base': '',
-            'api_key': '',
+            # 'model': 'gemma2:27b-instruct-q5_0',
+            # 'api_base': '',
+            # 'api_key': '',
             'embedding': 'bge-m3',
             'doc_names': '',
             'chat_history': [],
@@ -48,7 +48,8 @@ class SessionInitializer:
             'upload_time': None,
             'username': self.username,  # 設置使用者名稱
 
-            'empty_window_exists': True  # 新窗口存在
+            'empty_window_exists': True,  # 新窗口存在
+            'use_memory': False
         }
 
         return chat_session_data

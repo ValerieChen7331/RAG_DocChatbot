@@ -11,16 +11,14 @@ class LLMAPI:
 
     # 支援的內部 LLM 模型對應表（顯示名稱 → 實際模型 ID）
     llm_model_names = {
-        "Gemma3_27b": "gemma3:27b",
-        "Deepseek_14b_QwenDistill": "deepseek-r1:14b-qwen-distill-q4_K_M",
-        "Mistral_7b_Instruct": "mistral:7b-instruct",
+        "Gemma3_27b": "gemma3:27b", # 新版
         "Gemma2_27b": "gemma2:27b-instruct-q5_0",
         "Gemma3_4b": "gemma3:4b",
-        "Deepseek_7b": "deepseek-r1:7b",
+        "Mistral_7b_Instruct": "mistral:7b-instruct",
         "Phi4_14b": "phi4:14b",
         "LLaMA3_2_Latest": "llama3.2:latest",
         "Taiwan_LLaMA3_8b_Instruct": "cwchang/llama-3-taiwan-8b-instruct:f16",
-        "QWQ_32b": "qwq:32b",
+        "QWQ_32b": "qwq:32b",   # 推裡模型
     }
     # "Gemma3_12b": "gemma3:12b",
 
