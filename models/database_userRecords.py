@@ -12,6 +12,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 class UserRecordsDB:
+    _initialized_users = set()
     def __init__(self, username: str):
         """初始化 UserRecordsDB 類別，建立與使用者相關的資料庫"""
         self.username = username
@@ -19,7 +20,9 @@ class UserRecordsDB:
         self.db_path = self.file_paths.get_user_records_dir(username).joinpath(f"{username}.db")
         self.base_db = BaseDB(self.db_path)
         self.base_db.ensure_db_path_exists()
-        self._init_tables()  # 初始化所有資料表（包含聊天、檔案、RAG）
+        if self.username not in UserRecordsDB._initialized_users:
+            self._init_tables()
+            UserRecordsDB._initialized_users.add(self.username)
 
     def _init_tables(self):
         """初始化所有所需的資料表（第一次使用者登入時建立）"""
