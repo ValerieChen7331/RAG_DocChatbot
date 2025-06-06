@@ -66,12 +66,12 @@ class AnswerEvaluator:
                 scores.append(
                     self._evaluate_single_response(row['Question'], row['Answer'], row[test_column])
                 )
-                time.sleep(3)
+                # time.sleep(3)
             evaluations.append(scores)
             # 跑多輪，中間休息
             current_time = datetime.now().strftime('%H:%M:%S')
             print(f"✅ 完成模型回答評估：{self.llm_option}（時間：{current_time}），暫停 5 分鐘避免限流")
-            time.sleep(250)
+            # time.sleep(250)
 
 
         # 計算平均得分與是否正確
